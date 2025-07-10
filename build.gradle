@@ -64,3 +64,4 @@ tasks.register('copyPlugin', Copy) {
     include('*.jar')
     into("C:/Users/winnie/Documents/lunaris/server/plugins")
 }
+build.finalizedBy(copyPlugin)

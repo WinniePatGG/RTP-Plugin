@@ -10,7 +10,12 @@ commands:
   rtp:
     description: Random Teleport
     usage: /rtp
+    permission: rtp.use
 permissions:
-  rtp.bypasscooldown:
+  rtp.use:
+    description: Allows use of /rtp
+    default: true
+
+  rtp.bypass.cooldown:
     description: Allows bypassing the RTP cooldown
     default: op
