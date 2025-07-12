@@ -9,6 +9,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 
 import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
 
 public class RTPCommand implements CommandExecutor {
 
@@ -22,7 +23,7 @@ public class RTPCommand implements CommandExecutor {
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!(sender instanceof Player p)) {
-            sender.sendMessage("Only players can use this command.");
+            sender.sendMessage(ChatColor.RED + "Only players can use this command.");
             return true;
         }
 
@@ -32,36 +33,30 @@ public class RTPCommand implements CommandExecutor {
         }
 
         long currentTime = System.currentTimeMillis();
-        if (cooldowns.containsKey(p.getUniqueId())) {
-            long expireTime = cooldowns.get(p.getUniqueId());
+        if (!p.hasPermission("rtp.bypass.cooldown")) {
+            long expireTime = cooldowns.getOrDefault(p.getUniqueId(), 0L);
             if (currentTime < expireTime) {
                 long remaining = (expireTime - currentTime) / 1000;
                 p.sendMessage(ChatColor.RED + "You must wait " + remaining + " seconds before using RTP again.");
                 return true;
             }
-        }
-
-        if (!p.hasPermission("rtp.bypass.cooldown")) {
             cooldowns.put(p.getUniqueId(), currentTime + (5 * 60 * 1000));
         }
 
         World world = p.getWorld();
-        String world_name = world.getName();
-
-        p.sendMessage(ChatColor.YELLOW + "Searching for a safe location in " + world_name + "...");
+        p.sendMessage(ChatColor.YELLOW + "Searching for a safe location in " + world.getName() + "...");
 
         new BukkitRunnable() {
             @Override
             public void run() {
                 Location safeLoc = null;
-                int radius = 2000;
+                int radius = 4000;
                 int attempts = 20;
 
                 switch (world.getEnvironment()) {
                     case NORMAL -> safeLoc = findSafeLocationOverworld(world, radius, attempts);
                     case NETHER -> safeLoc = findSafeLocationNether(world, radius, attempts);
-                    case THE_END -> sender.sendMessage("Not yet implemented");
-                    default -> {}
+                    case THE_END -> safeLoc = findSafeLocationEnd(world, radius, attempts);
                 }
 
                 if (safeLoc != null) {
@@ -82,17 +77,31 @@ public class RTPCommand implements CommandExecutor {
     }
 
     private Location findSafeLocationOverworld(World world, int radius, int attempts) {
+        WorldBorder border = world.getWorldBorder();
+        Location center = border.getCenter();
+
         for (int i = 0; i < attempts; i++) {
-            int x = -radius + (int) (Math.random() * radius * 2);
-            int z = -radius + (int) (Math.random() * radius * 2);
-            int y = world.getHighestBlockYAt(x, z) + 1;
+            int x = ThreadLocalRandom.current().nextInt(-radius, radius + 1);
+            int z = ThreadLocalRandom.current().nextInt(-radius, radius + 1);
 
-            Location loc = new Location(world, x + 0.5, y, z + 0.5);
-            Block block = world.getBlockAt(x, y - 1, z);
+            int worldX = center.getBlockX() + x;
+            int worldZ = center.getBlockZ() + z;
+            int y = world.getHighestBlockYAt(worldX, worldZ) + 1;
 
-            if (!block.getType().isSolid()) continue;
+            Location loc = new Location(world, worldX + 0.5, y, worldZ + 0.5);
 
-            if (loc.getBlock().getType() == Material.AIR && loc.clone().add(0,1,0).getBlock().getType() == Material.AIR) {
+            if (!border.isInside(loc)) continue;
+
+            Block blockBelow = world.getBlockAt(worldX, y - 1, worldZ);
+            if (!blockBelow.getType().isSolid()) continue;
+
+            Material below = blockBelow.getType();
+            if (below == Material.LAVA || below == Material.WATER || below == Material.CACTUS) continue;
+
+            Block block = loc.getBlock();
+            Block blockAbove = block.getRelative(BlockFace.UP);
+
+            if (block.getType() == Material.AIR && blockAbove.getType() == Material.AIR) {
                 return loc;
             }
         }
@@ -101,8 +110,8 @@ public class RTPCommand implements CommandExecutor {
 
     private Location findSafeLocationNether(World world, int radius, int attempts) {
         for (int i = 0; i < attempts; i++) {
-            int x = -radius + (int) (Math.random() * radius * 2);
-            int z = -radius + (int) (Math.random() * radius * 2);
+            int x = ThreadLocalRandom.current().nextInt(-radius, radius + 1);
+            int z = ThreadLocalRandom.current().nextInt(-radius, radius + 1);
 
             for (int y = 120; y > 10; y--) {
                 Location loc = new Location(world, x + 0.5, y, z + 0.5);
@@ -118,6 +127,27 @@ public class RTPCommand implements CommandExecutor {
                     if (above.getType() == Material.AIR && above2.getType() == Material.AIR) {
                         return above.getLocation().add(0.5, 0, 0.5);
                     }
+                }
+            }
+        }
+        return null;
+    }
+
+    private Location findSafeLocationEnd(World world, int radius, int attempts) {
+        for (int i = 0; i < attempts; i++) {
+            int x = ThreadLocalRandom.current().nextInt(-radius, radius + 1);
+            int z = ThreadLocalRandom.current().nextInt(-radius, radius + 1);
+            int y = world.getHighestBlockYAt(x, z) + 1;
+
+            Location loc = new Location(world, x + 0.5, y, z + 0.5);
+            Block blockBelow = world.getBlockAt(x, y - 1, z);
+
+            if (blockBelow.getType() == Material.END_STONE) {
+                Block block = loc.getBlock();
+                Block blockAbove = block.getRelative(BlockFace.UP);
+
+                if (block.getType() == Material.AIR && blockAbove.getType() == Material.AIR) {
+                    return loc;
                 }
             }
         }
